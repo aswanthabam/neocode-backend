@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    container_name: neodocs_db
+    restart: always
+    environment:
+      POSTGRES_DB: neodocs_db
+      POSTGRES_USER: neodocs_user
+      POSTGRES_PASSWORD: neodocs_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - neodocs_network
+
+  # Redis (for caching and session storage)
+  redis:
+    image: redis:7-alpine
+    container_name: neodocs_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - neodocs_network
+
+  # Django Application
+  web:
+    build: .
+    container_name: neodocs_web
+    restart: always
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DEBUG=False
+      - DATABASE_URL=postgresql://neodocs_user:neodocs_password@db:5432/neodocs_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - CORS_ALLOW_ALL_ORIGINS=True
+      - JWT_ACCESS_TOKEN_LIFETIME=60
+      - JWT_REFRESH_TOKEN_LIFETIME=1
+      - EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./logs:/app/logs
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+    ports:
+      - "8000:8000"
+    networks:
+      - neodocs_network
+    command: >
+      sh -c "python manage.py migrate &&
+              python manage.py collectstatic --noinput &&
+              gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 neodocs.wsgi:application"
+
+  # Nginx (optional - for production)
+  nginx:
+    image: nginx:alpine
+    container_name: neodocs_nginx
+    restart: always
+    depends_on:
+      - web
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - neodocs_network
+
+volumes:
+  postgres_data:
+
+networks:
+  neodocs_network:
+    driver: bridge 

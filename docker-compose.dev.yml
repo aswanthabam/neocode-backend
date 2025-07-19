@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    container_name: neodocs_db_dev
+    restart: always
+    environment:
+      POSTGRES_DB: neodocs_db
+      POSTGRES_USER: neodocs_user
+      POSTGRES_PASSWORD: neodocs_password
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - neodocs_network_dev
+
+  # Redis (for caching and session storage)
+  redis:
+    image: redis:7-alpine
+    container_name: neodocs_redis_dev
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - neodocs_network_dev
+
+  # Django Application (Development)
+  web:
+    build: .
+    container_name: neodocs_web_dev
+    restart: always
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://neodocs_user:neodocs_password@db:5432/neodocs_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - GOOGLE_OAUTH_CLIENT_ID=your-google-client-id
+      - GOOGLE_OAUTH_CLIENT_SECRET=your-google-client-secret
+      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback/
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - CORS_ALLOW_ALL_ORIGINS=True
+      - JWT_ACCESS_TOKEN_LIFETIME=60
+      - JWT_REFRESH_TOKEN_LIFETIME=1
+      - EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+    ports:
+      - "8000:8000"
+    networks:
+      - neodocs_network_dev
+    command: >
+      sh -c "python manage.py migrate &&
+              python manage.py collectstatic --noinput &&
+              python manage.py runserver 0.0.0.0:8000"
+
+volumes:
+  postgres_data_dev:
+
+networks:
+  neodocs_network_dev:
+    driver: bridge 
