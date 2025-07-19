@@ -1,20 +1,19 @@
 from django.urls import path
 from .views import (
-    RegisterView,
-    LoginView,
+    UserRegistrationView,
+    UserLoginView,
     UserProfileView,
     GoogleOAuthView,
-    RefreshTokenView,
-    LogoutView,
-    google_oauth_url
+    TokenRefreshView,
+    LogoutView
 )
 
 app_name = 'auth_api'
 
 urlpatterns = [
     # Registration and Login
-    path('register/', RegisterView.as_view(), name='register'),
-    path('login/', LoginView.as_view(), name='login'),
+    path('register/', UserRegistrationView.as_view(), name='register'),
+    path('login/', UserLoginView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     
     # User Profile
@@ -22,8 +21,8 @@ urlpatterns = [
     
     # Google OAuth
     path('google/', GoogleOAuthView.as_view(), name='google_oauth'),
-    path('google/url/', google_oauth_url, name='google_oauth_url'),
+    path('google/url/', GoogleOAuthView.as_view(), name='google_oauth_url'),
     
     # Token Management
-    path('token/refresh/', RefreshTokenView.as_view(), name='token_refresh'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ] 
