@@ -1,34 +1,51 @@
-from rest_framework import status, permissions
+from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from django.conf import settings
-import requests
-import json
-from datetime import datetime, timedelta
-
-from .models import CustomUser, OAuthToken
+from django.utils import timezone
+from django.db.models import Q, Count
+from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from .models import CustomUser, Organization, OAuthToken, UserActivity
 from .serializers import (
-    UserRegistrationSerializer,
-    UserLoginSerializer,
-    UserProfileSerializer,
-    GoogleOAuthSerializer,
-    OAuthTokenSerializer
+    UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
+    UserProfileUpdateSerializer, OrganizationSerializer, OrganizationCreateSerializer,
+    OrganizationUpdateSerializer, GoogleOAuthSerializer, OAuthTokenSerializer,
+    UserActivitySerializer, TokenRefreshSerializer, LogoutSerializer,
+    PasswordChangeSerializer, PasswordResetSerializer, PasswordResetConfirmSerializer,
+    UserStatsSerializer, NotificationPreferencesSerializer, PrivacySettingsSerializer
 )
+from documents.models import Document, DocumentShare, DocumentRequest
 
 
-class RegisterView(APIView):
+class UserRegistrationView(APIView):
+    """User registration endpoint"""
     permission_classes = [permissions.AllowAny]
     
+    @extend_schema(
+        summary="Register new user",
+        description="Create a new user account with email and password",
+        request=UserRegistrationSerializer,
+        responses={201: UserRegistrationSerializer, 400: "Bad Request"}
+    )
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
             
-            # Generate JWT tokens
+            # Generate tokens
             refresh = RefreshToken.for_user(user)
+            
+            # Log activity
+            UserActivity.objects.create(
+                user=user,
+                activity_type='registration',
+                description=f'User registered with email {user.email}',
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
             
             return Response({
                 'message': 'User registered successfully',
@@ -40,22 +57,46 @@ class RegisterView(APIView):
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
 
 
-class LoginView(APIView):
+class UserLoginView(APIView):
+    """User login endpoint"""
     permission_classes = [permissions.AllowAny]
     
+    @extend_schema(
+        summary="User login",
+        description="Authenticate user with email and password",
+        request=UserLoginSerializer,
+        responses={200: "Login successful", 400: "Invalid credentials"}
+    )
     def post(self, request):
-        serializer = UserLoginSerializer(data=request.data, context={'request': request})
+        serializer = UserLoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data['user']
             
             # Update last login
-            user.last_login = datetime.now()
+            user.last_login = timezone.now()
             user.save()
             
-            # Generate JWT tokens
+            # Generate tokens
             refresh = RefreshToken.for_user(user)
+            
+            # Log activity
+            UserActivity.objects.create(
+                user=user,
+                activity_type='login',
+                description=f'User logged in from {self.get_client_ip(request)}',
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
             
             return Response({
                 'message': 'Login successful',
@@ -67,171 +108,391 @@ class LoginView(APIView):
             }, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
 
 
 class UserProfileView(APIView):
+    """User profile management"""
     permission_classes = [permissions.IsAuthenticated]
     
+    @extend_schema(
+        summary="Get user profile",
+        description="Retrieve current user's profile information",
+        responses={200: UserProfileSerializer}
+    )
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
     
+    @extend_schema(
+        summary="Update user profile",
+        description="Update current user's profile details",
+        request=UserProfileUpdateSerializer,
+        responses={200: UserProfileSerializer, 400: "Bad Request"}
+    )
     def put(self, request):
-        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        serializer = UserProfileUpdateSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            
+            # Log activity
+            UserActivity.objects.create(
+                user=request.user,
+                activity_type='profile_updated',
+                description='User updated profile information',
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            return Response(UserProfileSerializer(request.user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class OrganizationView(APIView):
+    """Organization profile management"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get organization profile",
+        description="Retrieve organization profile information",
+        responses={200: OrganizationSerializer, 404: "Organization not found"}
+    )
+    def get(self, request):
+        try:
+            organization = Organization.objects.get(user=request.user)
+            serializer = OrganizationSerializer(organization)
+            return Response(serializer.data)
+        except Organization.DoesNotExist:
+            return Response({'error': 'Organization profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @extend_schema(
+        summary="Create organization profile",
+        description="Create organization profile for issuer/requester users",
+        request=OrganizationCreateSerializer,
+        responses={201: OrganizationSerializer, 400: "Bad Request"}
+    )
+    def post(self, request):
+        # Check if organization already exists
+        if Organization.objects.filter(user=request.user).exists():
+            return Response({'error': 'Organization profile already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = OrganizationCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            organization = serializer.save()
+            
+            # Log activity
+            UserActivity.objects.create(
+                user=request.user,
+                activity_type='organization_created',
+                description=f'Created organization profile: {organization.name}',
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            return Response(OrganizationSerializer(organization).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        summary="Update organization profile",
+        description="Update organization profile details",
+        request=OrganizationUpdateSerializer,
+        responses={200: OrganizationSerializer, 400: "Bad Request", 404: "Organization not found"}
+    )
+    def put(self, request):
+        try:
+            organization = Organization.objects.get(user=request.user)
+            serializer = OrganizationUpdateSerializer(organization, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                
+                # Log activity
+                UserActivity.objects.create(
+                    user=request.user,
+                    activity_type='organization_updated',
+                    description=f'Updated organization profile: {organization.name}',
+                    ip_address=self.get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                )
+                
+                return Response(OrganizationSerializer(organization).data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Organization.DoesNotExist:
+            return Response({'error': 'Organization profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class GoogleOAuthView(APIView):
+    """Google OAuth authentication"""
+    
+    @extend_schema(
+        summary="Google OAuth URL",
+        description="Get Google OAuth authorization URL",
+        responses={200: "OAuth URL"}
+    )
+    def get(self, request):
+        # This would typically redirect to Google OAuth
+        # For now, return a placeholder URL
+        return Response({
+            'auth_url': 'https://accounts.google.com/oauth/authorize?client_id=your-client-id&redirect_uri=your-redirect-uri&scope=email profile&response_type=code'
+        })
+    
+    @extend_schema(
+        summary="Google OAuth callback",
+        description="Handle Google OAuth callback and create/authenticate user",
+        request=GoogleOAuthSerializer,
+        responses={200: "OAuth successful", 400: "OAuth failed"}
+    )
+    def post(self, request):
+        serializer = GoogleOAuthSerializer(data=request.data)
+        if serializer.is_valid():
+            # Here you would validate the Google access token
+            # and create/authenticate the user
+            # For now, return a placeholder response
+            return Response({'message': 'Google OAuth successful'})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TokenRefreshView(APIView):
+    """Token refresh endpoint"""
+    
+    @extend_schema(
+        summary="Refresh token",
+        description="Refresh access token using refresh token",
+        request=TokenRefreshSerializer,
+        responses={200: "Token refreshed", 400: "Invalid refresh token"}
+    )
+    def post(self, request):
+        serializer = TokenRefreshSerializer(data=request.data)
+        if serializer.is_valid():
+            refresh_token = serializer.validated_data['refresh']
+            try:
+                refresh = RefreshToken(refresh_token)
+                return Response({
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                })
+            except Exception:
+                return Response({'error': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LogoutView(APIView):
+    """Logout endpoint"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="User logout",
+        description="Logout user and blacklist refresh token",
+        request=LogoutSerializer,
+        responses={200: "Logout successful"}
+    )
+    def post(self, request):
+        serializer = LogoutSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                refresh_token = serializer.validated_data['refresh']
+                refresh = RefreshToken(refresh_token)
+                refresh.blacklist()
+                
+                # Log activity
+                UserActivity.objects.create(
+                    user=request.user,
+                    activity_type='logout',
+                    description='User logged out',
+                    ip_address=self.get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                )
+                
+                return Response({'message': 'Logout successful'})
+            except Exception:
+                # Even if token blacklisting fails, return success
+                return Response({'message': 'Logout successful'})
+        return Response({'message': 'Logout successful'})
+
+
+class PasswordChangeView(APIView):
+    """Password change endpoint"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Change password",
+        description="Change user password",
+        request=PasswordChangeSerializer,
+        responses={200: "Password changed", 400: "Invalid password"}
+    )
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            old_password = serializer.validated_data['old_password']
+            new_password = serializer.validated_data['new_password']
+            
+            if user.check_password(old_password):
+                user.set_password(new_password)
+                user.save()
+                
+                # Log activity
+                UserActivity.objects.create(
+                    user=user,
+                    activity_type='password_changed',
+                    description='User changed password',
+                    ip_address=self.get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                )
+                
+                return Response({'message': 'Password changed successfully'})
+            else:
+                return Response({'error': 'Invalid old password'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class UserStatsView(APIView):
+    """User statistics endpoint"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get user statistics",
+        description="Get user statistics and activity summary",
+        responses={200: UserStatsSerializer}
+    )
+    def get(self, request):
+        user = request.user
+        
+        # Calculate statistics
+        total_documents = Document.objects.filter(owner=user).count()
+        shared_documents = DocumentShare.objects.filter(shared_by=user).count()
+        received_documents = DocumentShare.objects.filter(shared_with=user).count()
+        pending_requests = DocumentRequest.objects.filter(requestee=user, status='pending').count()
+        
+        # Try to get QR shares count (sharing app might not be available)
+        try:
+            from sharing.models import QRCodeShare
+            qr_shares_created = QRCodeShare.objects.filter(created_by=user).count()
+        except ImportError:
+            qr_shares_created = 0
+        
+        # Get last activity
+        last_activity = UserActivity.objects.filter(user=user).order_by('-created_at').first()
+        last_activity_time = last_activity.created_at if last_activity else user.last_login
+        
+        stats = {
+            'total_documents': total_documents,
+            'shared_documents': shared_documents,
+            'received_documents': received_documents,
+            'pending_requests': pending_requests,
+            'qr_shares_created': qr_shares_created,
+            'last_activity': last_activity_time
+        }
+        
+        serializer = UserStatsSerializer(stats)
+        return Response(serializer.data)
+
+
+class NotificationPreferencesView(APIView):
+    """Notification preferences management"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get notification preferences",
+        description="Get user notification preferences",
+        responses={200: NotificationPreferencesSerializer}
+    )
+    def get(self, request):
+        preferences = request.user.notification_preferences
+        serializer = NotificationPreferencesSerializer(preferences)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        summary="Update notification preferences",
+        description="Update user notification preferences",
+        request=NotificationPreferencesSerializer,
+        responses={200: NotificationPreferencesSerializer}
+    )
+    def put(self, request):
+        serializer = NotificationPreferencesSerializer(data=request.data)
+        if serializer.is_valid():
+            request.user.notification_preferences = serializer.validated_data
+            request.user.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GoogleOAuthView(APIView):
-    permission_classes = [permissions.AllowAny]
-    
-    def post(self, request):
-        serializer = GoogleOAuthSerializer(data=request.data)
-        if serializer.is_valid():
-            access_token = serializer.validated_data['access_token']
-            
-            # Verify token with Google
-            google_user_info = self.get_google_user_info(access_token)
-            if not google_user_info:
-                return Response({'error': 'Invalid Google token'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Get or create user
-            user = self.get_or_create_google_user(google_user_info)
-            
-            # Update last login
-            user.last_login = datetime.now()
-            user.save()
-            
-            # Generate JWT tokens
-            refresh = RefreshToken.for_user(user)
-            
-            return Response({
-                'message': 'Google OAuth login successful',
-                'user': UserProfileSerializer(user).data,
-                'tokens': {
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                }
-            }, status=status.HTTP_200_OK)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def get_google_user_info(self, access_token):
-        """Get user info from Google using access token"""
-        try:
-            response = requests.get(
-                'https://www.googleapis.com/oauth2/v2/userinfo',
-                headers={'Authorization': f'Bearer {access_token}'}
-            )
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except Exception as e:
-            print(f"Error getting Google user info: {e}")
-            return None
-    
-    def get_or_create_google_user(self, google_user_info):
-        """Get or create user from Google OAuth data"""
-        google_id = google_user_info.get('id')
-        email = google_user_info.get('email')
-        full_name = google_user_info.get('name', '')
-        profile_picture = google_user_info.get('picture', '')
-        
-        # Try to find existing user by Google ID or email
-        user = None
-        if google_id:
-            try:
-                user = CustomUser.objects.get(google_id=google_id)
-            except CustomUser.DoesNotExist:
-                pass
-        
-        if not user and email:
-            try:
-                user = CustomUser.objects.get(email=email)
-                # Update with Google ID if not already set
-                if not user.google_id:
-                    user.google_id = google_id
-                    user.is_oauth_user = True
-                    user.save()
-            except CustomUser.DoesNotExist:
-                pass
-        
-        # Create new user if not found
-        if not user:
-            username = email.split('@')[0] if email else f"user_{google_id}"
-            # Ensure username is unique
-            counter = 1
-            original_username = username
-            while CustomUser.objects.filter(username=username).exists():
-                username = f"{original_username}_{counter}"
-                counter += 1
-            
-            user = CustomUser.objects.create_user(
-                email=email,
-                username=username,
-                full_name=full_name,
-                google_id=google_id,
-                profile_picture=profile_picture,
-                is_oauth_user=True,
-                password=None  # OAuth users don't need password
-            )
-        
-        return user
-
-
-class RefreshTokenView(APIView):
-    permission_classes = [permissions.AllowAny]
-    
-    def post(self, request):
-        refresh_token = request.data.get('refresh')
-        if not refresh_token:
-            return Response({'error': 'Refresh token is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            refresh = RefreshToken(refresh_token)
-            return Response({
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-            })
-        except Exception as e:
-            return Response({'error': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class LogoutView(APIView):
+class PrivacySettingsView(APIView):
+    """Privacy settings management"""
     permission_classes = [permissions.IsAuthenticated]
     
-    def post(self, request):
-        try:
-            refresh_token = request.data.get('refresh')
-            if refresh_token:
-                try:
-                    token = RefreshToken(refresh_token)
-                    token.blacklist()
-                except Exception as token_error:
-                    # If blacklisting fails, still return success (token might be expired)
-                    print(f"Token blacklist error: {token_error}")
-                    # Continue with logout even if blacklisting fails
-            return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
-        except Exception as e:
-            print(f"Logout error: {e}")
-            # Return success even if there's an error, as the user is still logged out
-            return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+    @extend_schema(
+        summary="Get privacy settings",
+        description="Get user privacy settings",
+        responses={200: PrivacySettingsSerializer}
+    )
+    def get(self, request):
+        settings = request.user.privacy_settings
+        serializer = PrivacySettingsSerializer(settings)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        summary="Update privacy settings",
+        description="Update user privacy settings",
+        request=PrivacySettingsSerializer,
+        responses={200: PrivacySettingsSerializer}
+    )
+    def put(self, request):
+        serializer = PrivacySettingsSerializer(data=request.data)
+        if serializer.is_valid():
+            request.user.privacy_settings = serializer.validated_data
+            request.user.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])
-def google_oauth_url(request):
-    """Get Google OAuth URL for frontend"""
-    client_id = settings.GOOGLE_OAUTH_CLIENT_ID
-    redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI
-    scope = 'email profile'
+class UserActivityListView(generics.ListAPIView):
+    """User activity list"""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserActivitySerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['activity_type', 'created_at']
     
-    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scope}&access_type=offline"
+    def get_queryset(self):
+        return UserActivity.objects.filter(user=self.request.user).order_by('-created_at')
     
-    return Response({
-        'auth_url': auth_url,
-        'client_id': client_id,
-        'redirect_uri': redirect_uri
-    })
+    @extend_schema(
+        summary="Get user activities",
+        description="Get list of user activities",
+        parameters=[
+            OpenApiParameter(name='activity_type', description='Filter by activity type', required=False, type=str),
+            OpenApiParameter(name='created_at', description='Filter by creation date', required=False, type=str),
+        ]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

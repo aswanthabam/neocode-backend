@@ -1,0 +1,220 @@
+{
+  "summary": {
+    "total": 26,
+    "passed": 16,
+    "failed": 10,
+    "skipped": 0,
+    "success_rate": 61.53846153846154
+  },
+  "tests": [
+    {
+      "test": "Swagger UI",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:39.204950",
+      "response_status": 200,
+      "response_text": "<!DOCTYPE html>\n<html>\n  <head>\n    \n    <title>Document Vault API</title>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <link rel=\"icon\" href=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@latest/favicon-32x32.png\">\n    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@latest/swagger-ui.css\">\n    <style>\n      html { box-sizing: border-box; overflow-y: scroll; }\n      *, *:after, *:before { box-sizing: inherit; }\n      body { background: #fafafa; margin: 0; }\n    </style>\n    \n  </head>\n  <body>\n    \n    <div id=\"swagger-ui\"></div>\n    <script src=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@latest/swagger-ui-bundle.js\"></script>\n    <script src=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@latest/swagger-ui-standalone-preset.js\"></script>\n    \n    <script>\n    \"use strict\";\n\nconst swaggerSettings = {\n  \"deepLinking\": true,\n  \"persistAuthorization\": true,\n  \"displayOperationId\": true\n};\nconst schemaAuthNames = [];\nlet schemaAuthFailed = false;\nconst plugins = [];\n\nconst reloadSchemaOnAuthChange = () => {\n  return {\n    statePlugins: {\n      auth: {\n        wrapActions: {\n          authorize: (ori) => (...args) => {\n            schemaAuthFailed = false;\n            setTimeout(() => ui.specActions.download());\n            return ori(...args);\n          },\n          logout: (ori) => (...args) => {\n            schemaAuthFailed = false;\n            setTimeout(() => ui.specActions.download());\n            return ori(...args);\n          },\n        },\n      },\n    },\n  };\n};\n\nif (schemaAuthNames.length > 0) {\n  plugins.push(reloadSchemaOnAuthChange);\n}\n\nconst uiInitialized = () => {\n  try {\n    ui;\n    return true;\n  } catch {\n    return false;\n  }\n};\n\nconst isSchemaUrl = (url) => {\n  if (!uiInitialized()) {\n    return false;\n  }\n  return url === new URL(ui.getConfigs().url, document.baseURI).href;\n};\n\nconst responseInterceptor = (response, ...args) => {\n  if (!response.ok && isSchemaUrl(response.url)) {\n    console.warn(\"schema request received '\" + response.status + \"'. disabling credentials for schema till logout.\");\n    if (!schemaAuthFailed) {\n      // only retry once to prevent endless loop.\n      schemaAuthFailed = true;\n      setTimeout(() => ui.specActions.download());\n    }\n  }\n  return response;\n};\n\nconst injectAuthCredentials = (request) => {\n  let authorized;\n  if (uiInitialized()) {\n    const state = ui.getState().get(\"auth\").get(\"authorized\");\n    if (state !== undefined && Object.keys(state.toJS()).length !== 0) {\n      authorized = state.toJS();\n    }\n  } else if (![undefined, \"{}\"].includes(localStorage.authorized)) {\n    authorized = JSON.parse(localStorage.authorized);\n  }\n  if (authorized === undefined) {\n    return;\n  }\n  for (const authName of schemaAuthNames) {\n    const authDef = authorized[authName];\n    if (authDef === undefined || authDef.schema === undefined) {\n      continue;\n    }\n    if (authDef.schema.type === \"http\" && authDef.schema.scheme === \"bearer\") {\n      request.headers[\"Authorization\"] = \"Bearer \" + authDef.value;\n      return;\n    } else if (authDef.schema.type === \"http\" && authDef.schema.scheme === \"basic\") {\n      request.headers[\"Authorization\"] = \"Basic \" + btoa(authDef.value.username + \":\" + authDef.value.password);\n      return;\n    } else if (authDef.schema.type === \"apiKey\" && authDef.schema.in === \"header\") {\n      request.headers[authDef.schema.name] = authDef.value;\n      return;\n    } else if (authDef.schema.type === \"oauth2\" && authDef.token.token_type === \"Bearer\") {\n      request.headers[\"Authorization\"] = `Bearer ${authDef.token.access_token}`;\n      return;\n    }\n  }\n};\n\nconst requestInterceptor = (request, ...args) => {\n  if (request.loadSpec && schemaAuthNames.length > 0 && !schemaAuthFailed) {\n    try {\n      injectAuthCredentials(request);\n    } catch (e) {\n      console.error(\"schema auth injection failed with error: \", e);\n    }\n  }\n  // selectively omit adding headers to mitigate CORS issues.\n  if (![\"GET\", undefined].includes(request.method) && request.credentials === \"same-origin\") {\n    request.headers[\"X-CSRFTOKEN\"] = \"rJWemiMOUpN0EiOE1sk2EVq7BZGUYFsXO06kHkXwaIvsnk8gwvNGGtbjL0PA8PxN\";\n  }\n  return request;\n};\n\nconst ui = SwaggerUIBundle({\n  url: \"/api/schema/\",\n  dom_id: \"#swagger-ui\",\n  presets: [SwaggerUIBundle.presets.apis],\n  plugins,\n  layout: \"BaseLayout\",\n  requestInterceptor,\n  responseInterceptor,\n  ...swaggerSettings,\n});\n\nui.initOAuth({});\n\n    </script>\n    \n    \n  </body>\n</html>\n",
+      "error": null
+    },
+    {
+      "test": "OpenAPI Schema",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:39.320230",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 500"
+    },
+    {
+      "test": "ReDoc",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:39.326228",
+      "response_status": 200,
+      "response_text": "<!DOCTYPE html>\n<html>\n  <head>\n    \n    <title>Document Vault API</title>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n    <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;700&family=Roboto:wght@300;400;700&display=swap\">\n    <style>\n      \n      body { margin: 0; padding: 0; }\n    </style>\n    \n  </head>\n  <body>\n    \n    \n    <div id=\"redoc-container\"></div>\n    <script src=\"https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js\"></script>\n    <script>\n      const redocSettings = {\n  \"hideDownloadButton\": true,\n  \"hideHostname\": true\n};\n      Redoc.init(\"/api/schema/\", redocSettings, document.getElementById('redoc-container'))\n    </script>\n    \n    \n  </body>\n</html>\n",
+      "error": null
+    },
+    {
+      "test": "User Registration",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:40.084042",
+      "response_status": 201,
+      "response_text": "{\"message\":\"User registered successfully\",\"user\":{\"id\":3,\"full_name\":\"Test User 1752957339\",\"email\":\"testuser1752957339@example.com\",\"username\":\"testuser1752957339\",\"vault_id\":\"testuser1752957339@vault\",\"user_type\":\"individual\",\"phone_number\":null,\"date_of_birth\":null,\"address\":null,\"profile_picture\":null,\"is_verified\":false,\"notification_preferences\":{},\"privacy_settings\":{},\"created_at\":\"2025-07-19T20:35:40.044998Z\",\"updated_at\":\"2025-07-19T20:35:40.044998Z\"},\"tokens\":{\"access\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyOTYwOTQwLCJpYXQiOjE3NTI5NTczNDAsImp0aSI6IjEyNmJhMWQ4NWUwODRiZDFhNjdlYTA1ODZiYTFjMGU2IiwidXNlcl9pZCI6M30.Ow0wTvnCjoyBcvHRo6y4ETrSv4APu51SwCMMhjDKy7U\",\"refresh\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc1MzA0Mzc0MCwiaWF0IjoxNzUyOTU3MzQwLCJqdGkiOiI5OWQwNTdlZmYzOTc0ZWVkOGRjNTgwZGE4ODBhMGFhOCIsInVzZXJfaWQiOjN9.OFKILGcWoopnPzb915nMpt2G1l1FrJyDtY4R2vRi5NY\"}}",
+      "error": null
+    },
+    {
+      "test": "Duplicate Registration",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:40.099044",
+      "response_status": null,
+      "response_text": null,
+      "error": null
+    },
+    {
+      "test": "User Login",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:40.855529",
+      "response_status": 200,
+      "response_text": "{\"message\":\"Login successful\",\"user\":{\"id\":3,\"full_name\":\"Test User 1752957339\",\"email\":\"testuser1752957339@example.com\",\"username\":\"testuser1752957339\",\"vault_id\":\"testuser1752957339@vault\",\"user_type\":\"individual\",\"phone_number\":null,\"date_of_birth\":null,\"address\":null,\"profile_picture\":null,\"is_verified\":false,\"notification_preferences\":{},\"privacy_settings\":{},\"created_at\":\"2025-07-19T20:35:40.044998Z\",\"updated_at\":\"2025-07-19T20:35:40.825558Z\"},\"tokens\":{\"access\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyOTYwOTQwLCJpYXQiOjE3NTI5NTczNDAsImp0aSI6ImM3YWE4NzQyODM3OTRiNmY4MWQ0OTZjYzMzMTI5MzhjIiwidXNlcl9pZCI6M30.gQjliF9A3RR7lJ91uZZve6St0KFR24DDi8AW9nbeAAg\",\"refresh\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc1MzA0Mzc0MCwiaWF0IjoxNzUyOTU3MzQwLCJqdGkiOiI5NGI3ODUzMGRmM2U0YmZlOGZlNTgwNTg5Y2FiMTZhZCIsInVzZXJfaWQiOjN9.wrvbLZdpNdBsBZD4K7V7FXA2v5v4ycw7PywUr5DX7S0\"}}",
+      "error": null
+    },
+    {
+      "test": "Invalid Login",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:41.592426",
+      "response_status": null,
+      "response_text": null,
+      "error": null
+    },
+    {
+      "test": "Non-existent User Login",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.335113",
+      "response_status": null,
+      "response_text": null,
+      "error": null
+    },
+    {
+      "test": "Get Profile",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.345113",
+      "response_status": 200,
+      "response_text": "{\"id\":3,\"full_name\":\"Test User 1752957339\",\"email\":\"testuser1752957339@example.com\",\"username\":\"testuser1752957339\",\"vault_id\":\"testuser1752957339@vault\",\"user_type\":\"individual\",\"phone_number\":null,\"date_of_birth\":null,\"address\":null,\"profile_picture\":null,\"is_verified\":false,\"notification_preferences\":{},\"privacy_settings\":{},\"created_at\":\"2025-07-19T20:35:40.044998Z\",\"updated_at\":\"2025-07-19T20:35:40.825558Z\"}",
+      "error": null
+    },
+    {
+      "test": "Update Profile",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.375115",
+      "response_status": 200,
+      "response_text": "{\"id\":3,\"full_name\":\"Updated Test User\",\"email\":\"testuser1752957339@example.com\",\"username\":\"testuser1752957339\",\"vault_id\":\"testuser1752957339@vault\",\"user_type\":\"individual\",\"phone_number\":\"+9876543210\",\"date_of_birth\":null,\"address\":\"456 Updated Street\",\"profile_picture\":null,\"is_verified\":false,\"notification_preferences\":{},\"privacy_settings\":{},\"created_at\":\"2025-07-19T20:35:40.044998Z\",\"updated_at\":\"2025-07-19T20:35:42.356118Z\"}",
+      "error": null
+    },
+    {
+      "test": "Create Organization",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.496173",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 500"
+    },
+    {
+      "test": "Get Organization",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.507668",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 404"
+    },
+    {
+      "test": "Update Organization",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.516671",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 404"
+    },
+    {
+      "test": "Create Category",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.539668",
+      "response_status": 201,
+      "response_text": "{\"name\":\"Test Category\",\"description\":\"A test category for documents\",\"icon\":null}",
+      "error": null
+    },
+    {
+      "test": "Get Category",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.558666",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 404"
+    },
+    {
+      "test": "Update Category",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.570689",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 404"
+    },
+    {
+      "test": "Delete Category",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.585671",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 404"
+    },
+    {
+      "test": "Create Document",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.596678",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 400"
+    },
+    {
+      "test": "Token Refresh",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.601679",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 401"
+    },
+    {
+      "test": "User Statistics",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.627194",
+      "response_status": 200,
+      "response_text": "{\"total_documents\":0,\"shared_documents\":0,\"received_documents\":0,\"pending_requests\":0,\"qr_shares_created\":0,\"last_activity\":\"2025-07-19T20:35:42.366115Z\"}",
+      "error": null
+    },
+    {
+      "test": "Get Notification Preferences",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.635196",
+      "response_status": 200,
+      "response_text": "{\"email_notifications\":true,\"push_notifications\":true,\"document_shared\":true,\"document_requested\":true,\"request_responded\":true,\"qr_accessed\":true}",
+      "error": null
+    },
+    {
+      "test": "Update Notification Preferences",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.650200",
+      "response_status": 200,
+      "response_text": "{\"email_notifications\":true,\"push_notifications\":false,\"document_shared\":true,\"document_requested\":true,\"request_responded\":true,\"qr_accessed\":true}",
+      "error": null
+    },
+    {
+      "test": "Get Privacy Settings",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.662196",
+      "response_status": 200,
+      "response_text": "{\"profile_visibility\":\"private\",\"show_email\":false,\"show_phone\":false,\"allow_document_requests\":true,\"allow_qr_sharing\":true}",
+      "error": null
+    },
+    {
+      "test": "Update Privacy Settings",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.681197",
+      "response_status": 200,
+      "response_text": "{\"profile_visibility\":\"private\",\"show_email\":false,\"show_phone\":false,\"allow_document_requests\":true,\"allow_qr_sharing\":true}",
+      "error": null
+    },
+    {
+      "test": "User Activities",
+      "status": "FAIL",
+      "timestamp": "2025-07-20T02:05:42.739735",
+      "response_status": null,
+      "response_text": null,
+      "error": "Status: 500"
+    },
+    {
+      "test": "Logout",
+      "status": "PASS",
+      "timestamp": "2025-07-20T02:05:42.767736",
+      "response_status": 200,
+      "response_text": "{\"message\":\"Logout successful\"}",
+      "error": null
+    }
+  ],
+  "timestamp": "2025-07-20T02:05:42.768737"
+}

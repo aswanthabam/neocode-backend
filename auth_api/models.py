@@ -1,19 +1,67 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
-from .managers import CustomUserManager
+from django.core.validators import RegexValidator
+from common.fields import ProfileImageField
+import uuid
 
 
 class CustomUser(AbstractUser):
-    objects = CustomUserManager()
+    # Basic user fields
     full_name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=150, unique=True, blank=True, null=True)
     
+    # Vault ID system
+    vault_id = models.CharField(
+        max_length=100, 
+        unique=True, 
+        blank=True,
+        help_text="Unique vault identifier (username@vault)"
+    )
+    
+    # User type and roles
+    USER_TYPE_CHOICES = [
+        ('individual', 'Individual'),
+        ('organization', 'Organization'),
+    ]
+    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='individual')
+    
+    # Organization fields
+    organization_name = models.CharField(max_length=255, blank=True, null=True)
+    organization_type = models.CharField(max_length=100, blank=True, null=True)
+    organization_website = models.URLField(blank=True, null=True)
+    organization_address = models.TextField(blank=True, null=True)
+    organization_phone = models.CharField(max_length=20, blank=True, null=True)
+    
+    # Verification fields
+    is_verified = models.BooleanField(default=False)
+    verification_date = models.DateTimeField(blank=True, null=True)
+    verified_by = models.ForeignKey('self', on_delete=models.SET_NULL, blank=True, null=True)
+    
     # OAuth fields
     google_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
-    profile_picture = models.URLField(blank=True, null=True)
+    profile_picture = ProfileImageField(upload_to='profile-images/', blank=True, null=True)
     is_oauth_user = models.BooleanField(default=False)
+    
+    # Contact information
+    phone_number = models.CharField(
+        max_length=15, 
+        blank=True, 
+        null=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\+?1?\d{9,15}$',
+                message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+            )
+        ]
+    )
+    date_of_birth = models.DateField(blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    
+    # Preferences
+    notification_preferences = models.JSONField(default=dict, blank=True)
+    privacy_settings = models.JSONField(default=dict, blank=True)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -26,9 +74,67 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return self.email
     
+    def save(self, *args, **kwargs):
+        # Generate vault_id if not provided
+        if not self.vault_id:
+            username = self.username or self.email.split('@')[0]
+            self.vault_id = f"{username}@vault"
+        super().save(*args, **kwargs)
+    
+    def get_profile_picture_url(self):
+        """Get the public URL for the profile picture"""
+        if self.profile_picture:
+            from common.storage import get_file_url
+            return get_file_url(self.profile_picture.name, 'profile-images')
+        return None
+    
     class Meta:
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+
+
+class Organization(models.Model):
+    """Organization model for document issuers and requesters"""
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='organization_profile')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    
+    ORGANIZATION_TYPE_CHOICES = [
+        ('government', 'Government'),
+        ('educational', 'Educational'),
+        ('financial', 'Financial'),
+        ('healthcare', 'Healthcare'),
+        ('corporate', 'Corporate'),
+        ('non_profit', 'Non-Profit'),
+        ('other', 'Other'),
+    ]
+    organization_type = models.CharField(max_length=20, choices=ORGANIZATION_TYPE_CHOICES)
+    
+    # Contact information
+    website = models.URLField(blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    
+    # Verification and status
+    is_verified = models.BooleanField(default=False)
+    verification_date = models.DateTimeField(blank=True, null=True)
+    verified_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, blank=True, null=True, related_name='verified_organizations')
+    
+    # Document issuance capabilities
+    can_issue_documents = models.BooleanField(default=False)
+    can_request_documents = models.BooleanField(default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        verbose_name = 'Organization'
+        verbose_name_plural = 'Organizations'
 
 
 class OAuthToken(models.Model):
@@ -45,3 +151,19 @@ class OAuthToken(models.Model):
     class Meta:
         verbose_name = 'OAuth Token'
         verbose_name_plural = 'OAuth Tokens'
+
+
+class UserActivity(models.Model):
+    """Track user activities for audit trail"""
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    activity_type = models.CharField(max_length=100)
+    description = models.TextField()
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.TextField(blank=True, null=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = 'User Activity'
+        verbose_name_plural = 'User Activities'
+        ordering = ['-created_at']

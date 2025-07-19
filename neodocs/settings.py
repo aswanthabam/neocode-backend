@@ -44,7 +44,13 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    # "oauth2_provider",  # Commented out due to import issues
+    "django_filters",
+    "drf_spectacular",
+    "common",
     "auth_api",
+    "documents",
+    "sharing",
 ]
 
 MIDDLEWARE = [
@@ -155,6 +161,23 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Temporarily disable throttling for development
+    # 'DEFAULT_THROTTLE_CLASSES': [
+    #     'rest_framework.throttling.AnonRateThrottle',
+    #     'rest_framework.throttling.UserRateThrottle'
+    # ],
+    # 'DEFAULT_THROTTLE_RATES': {
+    #     'anon': '100/hour',
+    #     'user': '1000/hour',
+    # },
 }
 
 # JWT Settings
@@ -248,22 +271,16 @@ LOGGING = {
     },
 }
 
-# Redis Cache Configuration
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
-
+# Cache Configuration (using database for development)
 CACHES = {
     'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': REDIS_URL,
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        }
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'cache_table',
     }
 }
 
-# Use Redis for session storage
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-SESSION_CACHE_ALIAS = 'default'
+# Use database for session storage
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
 # Production settings
 if not DEBUG:
@@ -279,5 +296,58 @@ if not DEBUG:
     MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# API Documentation Settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Document Vault API',
+    'DESCRIPTION': 'A comprehensive API for secure document management and sharing',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': '/api/v1/',
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+    },
+    'REDOC_UI_SETTINGS': {
+        'hideDownloadButton': True,
+        'hideHostname': True,
+    },
+}
+
+# OAuth2 Provider Settings (commented out due to import issues)
+# OAUTH2_PROVIDER = {
+#     'SCOPES': {
+#         'read': 'Read access to user data',
+#         'write': 'Write access to user data',
+#         'documents': 'Full document management access',
+#         'sharing': 'Document sharing and request features',
+#     },
+#     'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,  # 1 hour
+#     'REFRESH_TOKEN_EXPIRE_SECONDS': 2592000,  # 30 days
+#     'ROTATE_REFRESH_TOKENS': True,
+#     'BLACKLIST_AFTER_ROTATION': True,
+# }
+
 # Create logs directory if it doesn't exist
 os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+
+# Supabase Configuration
+# =====================
+
+# Supabase URL and API Key
+SUPABASE_URL = config('SUPABASE_URL', default='https://your-project.supabase.co')
+SUPABASE_ANON_KEY = config('SUPABASE_ANON_KEY', default='your-anon-key')
+SUPABASE_SERVICE_ROLE_KEY = config('SUPABASE_SERVICE_ROLE_KEY', default='your-service-role-key')
+
+# Supabase Storage Settings
+SUPABASE_STORAGE_BUCKET = config('SUPABASE_STORAGE_BUCKET', default='documents')
+SUPABASE_STORAGE_PUBLIC_URL = config('SUPABASE_STORAGE_PUBLIC_URL', default='https://your-project.supabase.co/storage/v1/object/public')
+
+# File Upload Settings
+MAX_FILE_SIZE = config('MAX_FILE_SIZE', default=10 * 1024 * 1024, cast=int)  # 10MB
+ALLOWED_FILE_TYPES = config('ALLOWED_FILE_TYPES', default='pdf,doc,docx,txt,jpg,jpeg,png,gif').split(',')
+ALLOWED_IMAGE_TYPES = config('ALLOWED_IMAGE_TYPES', default='jpg,jpeg,png,gif,webp').split(',')
+
+# Default file storage
+DEFAULT_FILE_STORAGE = 'common.storage.SupabaseStorage'
