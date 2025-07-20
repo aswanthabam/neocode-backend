@@ -23,12 +23,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default="django-insecure-njee6zl+-^-pguefna_5wvq-xyytdm&&sm(%4n9j&_23(q0%+s")
+SECRET_KEY = config(
+    "SECRET_KEY",
+    default="django-insecure-njee6zl+-^-pguefna_5wvq-xyytdm&&sm(%4n9j&_23(q0%+s",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+DEBUG = config("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+# Handle HTTPS in development (for ngrok)
+# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# SECURE_SSL_REDIRECT = False  # Disable SSL redirect in development
+
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS", default="localhost,127.0.0.1,6d271e879a3e.ngrok-free.app"
+).split(",")
 
 
 # Application definition
@@ -89,12 +98,24 @@ WSGI_APPLICATION = "neodocs.wsgi.application"
 
 import dj_database_url
 
-DATABASE_URL = config('DATABASE_URL', default='sqlite:///db.sqlite3')
+DATABASE_URL = config("DATABASE_URL", default="sqlite:///db.sqlite3")
 
-if DATABASE_URL.startswith('postgresql://'):
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL)
-    }
+if DATABASE_URL.startswith("postgresql://"):
+    try:
+        import psycopg2
+
+        DATABASES = {"default": dj_database_url.parse(DATABASE_URL)}
+    except ImportError:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning("psycopg2 not installed, falling back to SQLite")
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": BASE_DIR / "db.sqlite3",
+            }
+        }
 else:
     DATABASES = {
         "default": {
@@ -102,6 +123,26 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+# Redis Configuration
+REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+
+# Cache Configuration
+CACHES = {
+    "default": {
+        "BACKEND": config(
+            "CACHE_BACKEND", default="django.core.cache.backends.redis.RedisCache"
+        ),
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    }
+}
+
+# Session Configuration
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
 
 # Password validation
@@ -138,12 +179,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = config('STATIC_URL', default='static/')
-STATIC_ROOT = config('STATIC_ROOT', default=BASE_DIR / 'staticfiles')
+STATIC_URL = config("STATIC_URL", default="static/")
+STATIC_ROOT = config("STATIC_ROOT", default=BASE_DIR / "staticfiles")
 
 # Media files
-MEDIA_URL = config('MEDIA_URL', default='/media/')
-MEDIA_ROOT = config('MEDIA_ROOT', default=BASE_DIR / 'media')
+MEDIA_URL = config("MEDIA_URL", default="/media/")
+MEDIA_ROOT = config("MEDIA_ROOT", default=BASE_DIR / "media")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -151,24 +192,22 @@ MEDIA_ROOT = config('MEDIA_ROOT', default=BASE_DIR / 'media')
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Custom User Model
-AUTH_USER_MODEL = 'auth_api.CustomUser'
+AUTH_USER_MODEL = "auth_api.CustomUser"
 
 # REST Framework settings
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
     ),
-    'DEFAULT_FILTER_BACKENDS': (
-        'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
-    ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20,
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Temporarily disable throttling for development
     # 'DEFAULT_THROTTLE_CLASSES': [
     #     'rest_framework.throttling.AnonRateThrottle',
@@ -182,136 +221,152 @@ REST_FRAMEWORK = {
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME', default=60, cast=int)),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=config('JWT_REFRESH_TOKEN_LIFETIME', default=1, cast=int)),
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': False,
-
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-    'VERIFYING_KEY': None,
-    'AUDIENCE': None,
-    'ISSUER': None,
-
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
-
-    'JTI_CLAIM': 'jti',
-
-    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
-    
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=config("JWT_ACCESS_TOKEN_LIFETIME", default=60, cast=int)
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=config("JWT_REFRESH_TOKEN_LIFETIME", default=1, cast=int)
+    ),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "VERIFYING_KEY": None,
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "JTI_CLAIM": "jti",
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
     # Blacklist settings
-    'BLACKLIST_TOKEN_CHECKS': ['access', 'refresh'],
+    "BLACKLIST_TOKEN_CHECKS": ["access", "refresh"],
 }
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=bool)
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True, cast=bool)
 CORS_ALLOW_CREDENTIALS = True
 
 # Google OAuth settings
-GOOGLE_OAUTH_CLIENT_ID = config('GOOGLE_OAUTH_CLIENT_ID', default='your-google-client-id')
-GOOGLE_OAUTH_CLIENT_SECRET = config('GOOGLE_OAUTH_CLIENT_SECRET', default='your-google-client-secret')
-GOOGLE_OAUTH_REDIRECT_URI = config('GOOGLE_OAUTH_REDIRECT_URI', default='http://localhost:8000/api/auth/google/callback/')
+GOOGLE_OAUTH_CLIENT_ID = config(
+    "GOOGLE_OAUTH_CLIENT_ID", default="your-google-client-id"
+)
+GOOGLE_OAUTH_CLIENT_SECRET = config(
+    "GOOGLE_OAUTH_CLIENT_SECRET", default="your-google-client-secret"
+)
+GOOGLE_OAUTH_REDIRECT_URI = config(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/auth/google/callback/",
+)
 
 # Email settings
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
-EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
-EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = config("EMAIL_HOST", default="smtp.gmail.com")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 
 # Security settings
-SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
-SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0, cast=int)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = config('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False, cast=bool)
-SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=False, cast=bool)
+# SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
+# SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
+# SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+#     "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False, cast=bool
+# )
+# SECURE_HSTS_PRELOAD = config("SECURE_HSTS_PRELOAD", default=False, cast=bool)
 
-SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=False, cast=bool)
-CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=False, cast=bool)
+SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=False, cast=bool)
+CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=False, cast=bool)
 
 # Logging settings
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
         },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'file': {
-            'level': config('LOG_LEVEL', default='INFO'),
-            'class': 'logging.FileHandler',
-            'filename': config('LOG_FILE', default=BASE_DIR / 'logs' / 'django.log'),
-            'formatter': 'verbose',
-        },
-        'console': {
-            'level': config('LOG_LEVEL', default='INFO'),
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
+        "simple": {
+            "format": "{levelname} {message}",
+            "style": "{",
         },
     },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': config('LOG_LEVEL', default='INFO'),
+    "handlers": {
+        "file": {
+            "level": config("LOG_LEVEL", default="INFO"),
+            "class": "logging.FileHandler",
+            "filename": config("LOG_FILE", default=BASE_DIR / "logs" / "django.log"),
+            "formatter": "verbose",
+        },
+        "console": {
+            "level": config("LOG_LEVEL", default="INFO"),
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "root": {
+        "handlers": ["console", "file"],
+        "level": config("LOG_LEVEL", default="INFO"),
     },
 }
 
 # Cache Configuration (using database for development)
 CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
-        'LOCATION': 'cache_table',
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "cache_table",
     }
 }
 
 # Use database for session storage
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 # Production settings
 if not DEBUG:
     # Security settings for production
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    
-    # Static files with WhiteNoise
-    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    # SECURE_SSL_REDIRECT = False
+    # # Remove the development HTTPS handling in production
+    # SECURE_PROXY_SSL_HEADER = None
+    # SECURE_HSTS_SECONDS = 31536000
+    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # SECURE_HSTS_PRELOAD = True
+    # SESSION_COOKIE_SECURE = True
+    # CSRF_COOKIE_SECURE = True
+
+    # Static files with WhiteNoise (only in production)
+    try:
+        import whitenoise
+
+        MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+        STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    except ImportError:
+        pass
 
 # API Documentation Settings
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Document Vault API',
-    'DESCRIPTION': 'A comprehensive API for secure document management and sharing',
-    'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
-    'COMPONENT_SPLIT_REQUEST': True,
-    'SCHEMA_PATH_PREFIX': '/api/v1/',
-    'SWAGGER_UI_SETTINGS': {
-        'deepLinking': True,
-        'persistAuthorization': True,
-        'displayOperationId': True,
+    "TITLE": "Document Vault API",
+    "DESCRIPTION": "A comprehensive API for secure document management and sharing",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1/",
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+        "displayOperationId": True,
     },
-    'REDOC_UI_SETTINGS': {
-        'hideDownloadButton': True,
-        'hideHostname': True,
+    "REDOC_UI_SETTINGS": {
+        "hideDownloadButton": True,
+        "hideHostname": True,
     },
 }
 
@@ -330,24 +385,33 @@ SPECTACULAR_SETTINGS = {
 # }
 
 # Create logs directory if it doesn't exist
-os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+os.makedirs(BASE_DIR / "logs", exist_ok=True)
 
 # Supabase Configuration
 # =====================
 
 # Supabase URL and API Key
-SUPABASE_URL = config('SUPABASE_URL', default='https://your-project.supabase.co')
-SUPABASE_ANON_KEY = config('SUPABASE_ANON_KEY', default='your-anon-key')
-SUPABASE_SERVICE_ROLE_KEY = config('SUPABASE_SERVICE_ROLE_KEY', default='your-service-role-key')
+SUPABASE_URL = config("SUPABASE_URL", default="https://your-project.supabase.co")
+SUPABASE_ANON_KEY = config("SUPABASE_ANON_KEY", default="your-anon-key")
+SUPABASE_SERVICE_ROLE_KEY = config(
+    "SUPABASE_SERVICE_ROLE_KEY", default="your-service-role-key"
+)
 
 # Supabase Storage Settings
-SUPABASE_STORAGE_BUCKET = config('SUPABASE_STORAGE_BUCKET', default='documents')
-SUPABASE_STORAGE_PUBLIC_URL = config('SUPABASE_STORAGE_PUBLIC_URL', default='https://your-project.supabase.co/storage/v1/object/public')
+SUPABASE_STORAGE_BUCKET = config("SUPABASE_STORAGE_BUCKET", default="documents")
+SUPABASE_STORAGE_PUBLIC_URL = config(
+    "SUPABASE_STORAGE_PUBLIC_URL",
+    default="https://your-project.supabase.co/storage/v1/object/public",
+)
 
 # File Upload Settings
-MAX_FILE_SIZE = config('MAX_FILE_SIZE', default=10 * 1024 * 1024, cast=int)  # 10MB
-ALLOWED_FILE_TYPES = config('ALLOWED_FILE_TYPES', default='pdf,doc,docx,txt,jpg,jpeg,png,gif').split(',')
-ALLOWED_IMAGE_TYPES = config('ALLOWED_IMAGE_TYPES', default='jpg,jpeg,png,gif,webp').split(',')
+MAX_FILE_SIZE = config("MAX_FILE_SIZE", default=10 * 1024 * 1024, cast=int)  # 10MB
+ALLOWED_FILE_TYPES = config(
+    "ALLOWED_FILE_TYPES", default="pdf,doc,docx,txt,jpg,jpeg,png,gif"
+).split(",")
+ALLOWED_IMAGE_TYPES = config(
+    "ALLOWED_IMAGE_TYPES", default="jpg,jpeg,png,gif,webp"
+).split(",")
 
 # Default file storage
-DEFAULT_FILE_STORAGE = 'common.storage.SupabaseStorage'
+DEFAULT_FILE_STORAGE = "common.storage.SupabaseStorage"

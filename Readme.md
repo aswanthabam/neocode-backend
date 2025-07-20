@@ -17,44 +17,92 @@ A comprehensive Django backend with OAuth authentication system including user r
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Option 1: Docker (Recommended)
 
-```bash
-pip install -r requirements.txt
-```
+1. **Clone the repository**
 
-### 2. Run Migrations
+   ```bash
+   git clone <repository-url>
+   cd neodocs-backend
+   ```
 
-```bash
-python manage.py migrate
-```
+2. **Set up environment**
 
-### 3. Create Superuser (Optional)
+   ```bash
+   python setup_env.py
+   # Edit .env file with your configuration
+   ```
 
-```bash
-python manage.py createsuperuser
-```
+3. **Run with Docker**
 
-### 4. Run the Server
+   ```bash
+   # Development mode (with hot reloading)
+   docker-compose -f docker-compose.dev.yml up --build
 
-```bash
-python manage.py runserver
-```
+   # Production mode
+   docker-compose up --build
+   ```
 
-The API will be available at `http://localhost:8000/api/auth/`
+4. **Test the setup**
+
+   ```bash
+   python test_docker.py
+   ```
+
+5. **Create superuser**
+   ```bash
+   docker-compose exec web python manage.py createsuperuser
+   ```
+
+The API will be available at `http://localhost:8000/api/v1/`
+
+### Option 2: Local Development
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd neodocs-backend
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables**
+
+   ```bash
+   python setup_env.py
+   # Edit .env file with your configuration
+   ```
+
+4. **Set up database**
+
+   ```bash
+   python manage.py migrate
+   ```
+
+5. **Start the server**
+   ```bash
+   python manage.py runserver
+   ```
+
+The API will be available at `http://localhost:8000/api/v1/`
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register/` | User registration |
-| POST | `/api/auth/login/` | User login |
-| POST | `/api/auth/google/` | Google OAuth authentication |
-| GET | `/api/auth/google/url/` | Get Google OAuth URL |
-| GET | `/api/auth/profile/` | Get user profile |
-| PUT | `/api/auth/profile/` | Update user profile |
-| POST | `/api/auth/token/refresh/` | Refresh access token |
-| POST | `/api/auth/logout/` | User logout |
+| Method | Endpoint                   | Description                 |
+| ------ | -------------------------- | --------------------------- |
+| POST   | `/api/auth/register/`      | User registration           |
+| POST   | `/api/auth/login/`         | User login                  |
+| POST   | `/api/auth/google/`        | Google OAuth authentication |
+| GET    | `/api/auth/google/url/`    | Get Google OAuth URL        |
+| GET    | `/api/auth/profile/`       | Get user profile            |
+| PUT    | `/api/auth/profile/`       | Update user profile         |
+| POST   | `/api/auth/token/refresh/` | Refresh access token        |
+| POST   | `/api/auth/logout/`        | User logout                 |
 
 ## Google OAuth Setup
 
@@ -144,6 +192,7 @@ neocode-backend/
 ## Database Models
 
 ### CustomUser
+
 - `email`: Primary identifier (unique)
 - `full_name`: User's full name
 - `username`: Optional username (unique)
@@ -156,6 +205,7 @@ neocode-backend/
 - `last_login`: Last login timestamp
 
 ### OAuthToken
+
 - `user`: Foreign key to CustomUser
 - `access_token`: OAuth access token
 - `refresh_token`: OAuth refresh token
@@ -166,6 +216,7 @@ neocode-backend/
 ## Authentication Flow
 
 ### Regular Authentication
+
 1. User registers with email/password
 2. User logs in with email/password
 3. Server returns JWT access and refresh tokens
@@ -173,6 +224,7 @@ neocode-backend/
 5. Use refresh token to get new access token when expired
 
 ### Google OAuth Flow
+
 1. Client gets Google OAuth URL from `/api/auth/google/url/`
 2. User is redirected to Google for authentication
 3. Google returns access token to client
@@ -210,6 +262,57 @@ class CustomUser(AbstractUser):
     # ... other fields
 ```
 
+## Docker Setup
+
+### Development Mode
+
+```bash
+# Start development environment with hot reloading
+docker-compose -f docker-compose.dev.yml up --build
+
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f
+
+# Stop services
+docker-compose -f docker-compose.dev.yml down
+```
+
+### Production Mode
+
+```bash
+# Start production environment
+docker-compose up --build -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+### Database Management
+
+```bash
+# Access PostgreSQL
+docker-compose exec db psql -U neodocs_user -d neodocs_db
+
+# Run Django commands
+docker-compose exec web python manage.py createsuperuser
+docker-compose exec web python manage.py migrate
+docker-compose exec web python manage.py collectstatic
+
+# Create database backup
+docker-compose exec db pg_dump -U neodocs_user neodocs_db > backup.sql
+```
+
+### Environment Configuration
+
+1. Copy `env.example` to `.env`
+2. Update the `.env` file with your actual values
+3. For production, use `env.production` as a template
+
+See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for detailed Docker documentation.
+
 ## Production Deployment
 
 1. Set `DEBUG = False` in settings
@@ -219,6 +322,7 @@ class CustomUser(AbstractUser):
 5. Set up environment variables for OAuth credentials
 6. Use HTTPS in production
 7. Configure proper logging
+8. Use Docker for containerized deployment
 
 ## Contributing
 

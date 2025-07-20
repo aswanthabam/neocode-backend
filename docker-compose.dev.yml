@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL Database
@@ -7,7 +7,7 @@ services:
     container_name: neodocs_db_dev
     restart: always
     environment:
-      POSTGRES_DB: neodocs_db
+      POSTGRES_DB: neodocs_db_dev
       POSTGRES_USER: neodocs_user
       POSTGRES_PASSWORD: neodocs_password
     volumes:
@@ -29,7 +29,9 @@ services:
 
   # Django Application (Development)
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     container_name: neodocs_web_dev
     restart: always
     depends_on:
@@ -37,18 +39,21 @@ services:
       - redis
     environment:
       - DEBUG=True
-      - DATABASE_URL=postgresql://neodocs_user:neodocs_password@db:5432/neodocs_db
+      - DATABASE_URL=postgresql://neodocs_user:neodocs_password@db:5432/neodocs_db_dev
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - GOOGLE_OAUTH_CLIENT_ID=your-google-client-id
-      - GOOGLE_OAUTH_CLIENT_SECRET=your-google-client-secret
-      - GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/google/callback/
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-key}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}
       - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
       - CORS_ALLOW_ALL_ORIGINS=True
       - JWT_ACCESS_TOKEN_LIFETIME=60
       - JWT_REFRESH_TOKEN_LIFETIME=1
       - EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
       - LOG_LEVEL=DEBUG
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     volumes:
       - .:/app
       - ./logs:/app/logs
@@ -68,4 +73,4 @@ volumes:
 
 networks:
   neodocs_network_dev:
-    driver: bridge 
+    driver: bridge

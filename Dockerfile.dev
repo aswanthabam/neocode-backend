@@ -1,4 +1,4 @@
-# Use Python 3.11 slim image
+# Use Python 3.11 slim image for development
 FROM python:3.11-slim
 
 # Set environment variables
@@ -16,6 +16,7 @@ RUN apt-get update \
         libpq-dev \
         gcc \
         python3-dev \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -28,9 +29,6 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
-
 # Create a non-root user
 RUN adduser --disabled-password --gecos '' appuser
 RUN chown -R appuser:appuser /app
@@ -39,5 +37,5 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Run the application
+# Run the development server
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"] 

@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL Database
@@ -43,16 +43,30 @@ services:
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-      - CORS_ALLOW_ALL_ORIGINS=True
-      - JWT_ACCESS_TOKEN_LIFETIME=60
-      - JWT_REFRESH_TOKEN_LIFETIME=1
-      - EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
-      - LOG_LEVEL=INFO
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-False}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - JWT_ACCESS_TOKEN_LIFETIME=${JWT_ACCESS_TOKEN_LIFETIME:-60}
+      - JWT_REFRESH_TOKEN_LIFETIME=${JWT_REFRESH_TOKEN_LIFETIME:-1}
+      - EMAIL_BACKEND=${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE}
+      - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES}
+      - MAX_IMAGE_SIZE=${MAX_IMAGE_SIZE}
     volumes:
       - ./logs:/app/logs
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
+      - .:/app
     ports:
       - "8000:8000"
     networks:
@@ -60,7 +74,7 @@ services:
     command: >
       sh -c "python manage.py migrate &&
               python manage.py collectstatic --noinput &&
-              gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 neodocs.wsgi:application"
+              python manage.py runserver 0.0.0.0:8000"
 
   # Nginx (optional - for production)
   nginx:
@@ -84,4 +98,4 @@ volumes:
 
 networks:
   neodocs_network:
-    driver: bridge 
+    driver: bridge
